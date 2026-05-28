@@ -1,48 +1,59 @@
 import { useEffect, useRef, useState } from "react";
 
-const FRAME_COUNT = 240;
-// The source video loops back to aerial at the very end. We stop on
-// the "interior stillness" beat (~t=9.5s = frame index 228) and ignore
-// the trailing loop-back frames.
-const MAX_FRAME_INDEX = 228;
-// Fraction of scroll spent scrubbing. The remainder holds the final
-// frame still on screen so the user has a beat to absorb the interior.
-const SCRUB_END = 0.92;
-const framePath = (i) => `/frames/f${String(i).padStart(3, "0")}.webp`;
-
-export default function FrameSequence({ progressRef, onReady }) {
+/**
+ * Canvas-painted image sequence driven by a scroll progress ref.
+ *
+ * Props:
+ *  - progressRef   ref whose .current is a 0..1 scroll progress
+ *  - framesDir     folder under /public (e.g. "frames" or "frames-scene2")
+ *  - frameCount    number of frames in the sequence (e.g. 240)
+ *  - maxFrameIndex highest frame index (0-based) the scrub should reach
+ *  - scrubEnd      fraction of scroll where the scrub stops (last bit holds)
+ *  - startLoading  if false, defer preloading until it flips to true
+ *  - onReady       called once all frames are loaded
+ */
+export default function FrameSequence({
+  progressRef,
+  framesDir,
+  frameCount,
+  maxFrameIndex,
+  scrubEnd = 1,
+  startLoading = true,
+  onReady,
+}) {
   const canvasRef = useRef(null);
-  const wrapRef = useRef(null);
   const framesRef = useRef([]);
   const lastIdxRef = useRef(-1);
   const sizeRef = useRef({ w: 0, h: 0 });
   const [loadedPct, setLoadedPct] = useState(0);
   const [firstFramePainted, setFirstFramePainted] = useState(false);
 
-  // Preload all frames.
+  const framePath = (i) =>
+    `/${framesDir}/f${String(i).padStart(3, "0")}.webp`;
+
+  // Preload all frames once startLoading flips true.
   useEffect(() => {
+    if (!startLoading) return;
     let cancelled = false;
     let loaded = 0;
-    const images = new Array(FRAME_COUNT);
+    const images = new Array(frameCount);
 
     const onAllReady = () => {
       if (cancelled) return;
       onReady?.();
     };
 
-    // Load frames in priority order: first frame, last frame, then fill
-    // in evenly across the sequence so partial coverage still looks
-    // believable while the rest loads.
+    // Priority order: first frame, last frame, then halving strides so
+    // partial coverage still looks believable while the rest streams in.
     const order = [];
-    order.push(0, FRAME_COUNT - 1);
-    for (let stride = FRAME_COUNT / 2; stride >= 1; stride = Math.floor(stride / 2)) {
-      for (let i = 0; i < FRAME_COUNT; i += stride) {
+    order.push(0, frameCount - 1);
+    for (let stride = Math.floor(frameCount / 2); stride >= 1; stride = Math.floor(stride / 2)) {
+      for (let i = 0; i < frameCount; i += stride) {
         if (!order.includes(i)) order.push(i);
       }
       if (stride === 1) break;
     }
-    // Append any missed indices.
-    for (let i = 0; i < FRAME_COUNT; i++) {
+    for (let i = 0; i < frameCount; i++) {
       if (!order.includes(i)) order.push(i);
     }
 
@@ -54,19 +65,18 @@ export default function FrameSequence({ progressRef, onReady }) {
       img.onload = () => {
         if (cancelled) return;
         loaded++;
-        const pct = Math.round((loaded / FRAME_COUNT) * 100);
-        setLoadedPct(pct);
+        setLoadedPct(Math.round((loaded / frameCount) * 100));
         if (i === 0) {
           setFirstFramePainted(true);
           requestAnimationFrame(() => draw(true));
         }
-        if (loaded === FRAME_COUNT) onAllReady();
+        if (loaded === frameCount) onAllReady();
       };
       img.onerror = () => {
         if (cancelled) return;
         loaded++;
-        setLoadedPct(Math.round((loaded / FRAME_COUNT) * 100));
-        if (loaded === FRAME_COUNT) onAllReady();
+        setLoadedPct(Math.round((loaded / frameCount) * 100));
+        if (loaded === frameCount) onAllReady();
       };
     });
 
@@ -75,7 +85,7 @@ export default function FrameSequence({ progressRef, onReady }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [startLoading, frameCount, framesDir]);
 
   // Canvas sizing for crisp rendering on retina screens.
   useEffect(() => {
@@ -104,13 +114,10 @@ export default function FrameSequence({ progressRef, onReady }) {
     let raf = 0;
     const tick = () => {
       const p = progressRef?.current ?? 0;
-      // Clamp scroll progress to SCRUB_END so the final fraction
-      // holds the interior frame instead of dragging us back to
-      // the loop-back aerial that lives at the tail of the source.
-      const vp = Math.min(1, p / SCRUB_END);
+      const vp = Math.min(1, p / scrubEnd);
       const idx = Math.min(
-        MAX_FRAME_INDEX,
-        Math.max(0, Math.round(vp * MAX_FRAME_INDEX)),
+        maxFrameIndex,
+        Math.max(0, Math.round(vp * maxFrameIndex)),
       );
       if (idx !== lastIdxRef.current) draw(false, idx);
       raf = requestAnimationFrame(tick);
@@ -118,7 +125,7 @@ export default function FrameSequence({ progressRef, onReady }) {
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [progressRef]);
+  }, [progressRef, maxFrameIndex, scrubEnd]);
 
   function draw(force, targetIdx) {
     const canvas = canvasRef.current;
@@ -133,7 +140,7 @@ export default function FrameSequence({ progressRef, onReady }) {
     let img = framesRef.current[idx];
     if (!img || !img.complete || img.naturalWidth === 0) {
       let found = null;
-      for (let off = 1; off < FRAME_COUNT; off++) {
+      for (let off = 1; off < frameCount; off++) {
         const a = framesRef.current[idx - off];
         if (a && a.complete && a.naturalWidth > 0) { found = a; break; }
         const b = framesRef.current[idx + off];
@@ -171,7 +178,7 @@ export default function FrameSequence({ progressRef, onReady }) {
   }
 
   return (
-    <div ref={wrapRef} className="absolute inset-0">
+    <div className="absolute inset-0">
       <canvas
         ref={canvasRef}
         className="absolute inset-0 block h-full w-full"

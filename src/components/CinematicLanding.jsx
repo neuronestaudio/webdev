@@ -8,60 +8,152 @@ import FrameSequence from "./FrameSequence";
 
 gsap.registerPlugin(ScrollTrigger);
 
-const CHAPTER_1 = {
-  eyebrow: "I  ·  Site",
-  heading: "Between Sea\n& Cenote",
-  subheading:
-    "A private concrete refuge drawn between ocean, jungle and freshwater.",
+// ---------- Scene configs ----------
+
+const SCENE_1 = {
+  framesDir: "frames",
+  frameCount: 240,
+  // Source video loops back to aerial at t=9.5s+. Stop on the interior
+  // beat (frame index 228) and ignore the trailing loop-back frames.
+  maxFrameIndex: 228,
+  scrubEnd: 0.92,
 };
 
-const CHAPTER_2 = {
-  eyebrow: "II  ·  Approach",
-  heading: "A retreat cut\ninto the coastline.",
-  subheading:
-    "Architecture, landscape and water arranged as one calm axis.",
+const SCENE_2 = {
+  framesDir: "frames-scene2",
+  frameCount: 207,
+  maxFrameIndex: 206,
+  scrubEnd: 0.94,
 };
 
-const CHAPTER_3 = {
-  eyebrow: "III  ·  Stillness",
-  heading: "Designed\nfor stillness.",
-  subheading:
-    "A quiet interior volume opening toward the tropical canopy.",
-};
+// Total chapter count — used to size the indicator dots column.
+const CHAPTER_LABELS = [
+  "Site",
+  "Approach",
+  "Stillness",
+  "Threshold",
+  "Pavilion",
+  "Mirror",
+];
+
+const CHAPTERS = [
+  {
+    eyebrow: "I  ·  Site",
+    heading: "Between Sea\n& Cenote",
+    subheading:
+      "A private concrete refuge drawn between ocean, jungle and freshwater.",
+  },
+  {
+    eyebrow: "II  ·  Approach",
+    heading: "A retreat cut\ninto the coastline.",
+    subheading:
+      "Architecture, landscape and water arranged as one calm axis.",
+  },
+  {
+    eyebrow: "III  ·  Stillness",
+    heading: "Designed\nfor stillness.",
+    subheading:
+      "A quiet interior volume opening toward the tropical canopy.",
+  },
+  {
+    eyebrow: "IV  ·  Threshold",
+    heading: "Across the line\nbetween rooms.",
+    subheading:
+      "Glass dissolves; the interior breathes outward into the garden.",
+  },
+  {
+    eyebrow: "V  ·  Pavilion",
+    heading: "An open\npavilion.",
+    subheading: "Stone, water and sky held under a single canopy.",
+  },
+  {
+    eyebrow: "VI  ·  Mirror",
+    heading: "A pool that\nholds the sky.",
+    subheading: "Water stilled between palms and concrete.",
+  },
+];
+
+// Scene 1 occupies first half of global scroll, scene 2 the second.
+const SCENE_BOUNDARY = 0.5;
+// Crossfade window (narrow — feels like a single dissolve).
+const FADE_START = 0.485;
+const FADE_END = 0.515;
+
+// Chapter text fade timings (global progress). Each chapter holds for
+// most of its allotted window, with fade-in slightly leading the
+// previous chapter's fade-out for a clean handoff.
+const CHAPTER_TIMINGS = [
+  // Scene 1
+  { in: 0.01, out: 0.135 },
+  { in: 0.155, out: 0.29 },
+  { in: 0.31, out: 0.44 },
+  // Scene 2
+  { in: 0.535, out: 0.65 },
+  { in: 0.67, out: 0.79 },
+  { in: 0.81, out: 0.94 },
+];
 
 export default function CinematicLanding() {
   const containerRef = useRef(null);
-  const chapter1Ref = useRef(null);
-  const chapter2Ref = useRef(null);
-  const chapter3Ref = useRef(null);
-  const progressRef = useRef(0);
-  const [, setReady] = useState(false);
+  const scene1ProgRef = useRef(0);
+  const scene2ProgRef = useRef(0);
+  const globalProgRef = useRef(0);
+  const scene2LayerRef = useRef(null);
+  const scrollCueRef = useRef(null);
+  const chapterRefs = useRef([]);
 
-  // Set up scroll-driven progress + chapter timeline. This runs on
-  // mount because the frame sequence handles its own load lifecycle
-  // and can start painting as soon as the first frame is in.
+  // Gate scene 2's preload so we don't fire ~450 image requests at
+  // once on initial load.
+  const [scene1Ready, setScene1Ready] = useState(false);
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const ch1 = chapter1Ref.current;
-    const ch2 = chapter2Ref.current;
-    const ch3 = chapter3Ref.current;
+    // Initial states
+    chapterRefs.current.forEach((el) => {
+      if (el) gsap.set(el, { opacity: 0, y: 12 });
+    });
+    if (scene2LayerRef.current) {
+      gsap.set(scene2LayerRef.current, { opacity: 0 });
+    }
 
-    gsap.set([ch1, ch2, ch3], { opacity: 0, y: 12 });
-
-    // Progress driver — feeds the FrameSequence component.
+    // Driver: distributes global scroll progress to per-scene progress
+    // and updates the scene 2 layer's opacity for the crossfade.
     const progressST = ScrollTrigger.create({
       trigger: container,
       start: "top top",
       end: "bottom bottom",
       scrub: 0.4,
       onUpdate: (self) => {
-        progressRef.current = self.progress;
+        const p = self.progress;
+        globalProgRef.current = p;
+
+        // Per-scene scaled progress (0..1 within each half).
+        scene1ProgRef.current = Math.min(1, p / SCENE_BOUNDARY);
+        scene2ProgRef.current = Math.max(
+          0,
+          (p - SCENE_BOUNDARY) / (1 - SCENE_BOUNDARY),
+        );
+
+        // Crossfade scene 2 over scene 1 — sharp but eased.
+        const op = Math.min(
+          1,
+          Math.max(0, (p - FADE_START) / (FADE_END - FADE_START)),
+        );
+        if (scene2LayerRef.current) {
+          scene2LayerRef.current.style.opacity = op;
+        }
+
+        // Hide the scroll cue once the user has clearly engaged.
+        if (scrollCueRef.current) {
+          scrollCueRef.current.style.opacity = p < 0.03 ? 1 : 0;
+        }
       },
     });
 
-    // Chapter text crossfade timeline.
+    // Chapter text timeline — single timeline covering all 6 chapters
+    // relative to global scroll progress.
     const tl = gsap.timeline({
       defaults: { ease: "power2.inOut" },
       scrollTrigger: {
@@ -72,14 +164,12 @@ export default function CinematicLanding() {
       },
     });
 
-    tl.to(ch1, { opacity: 1, y: 0, duration: 0.07 }, 0.02);
-    tl.to(ch1, { opacity: 0, y: -10, duration: 0.07 }, 0.27);
-
-    tl.to(ch2, { opacity: 1, y: 0, duration: 0.07 }, 0.31);
-    tl.to(ch2, { opacity: 0, y: -10, duration: 0.07 }, 0.58);
-
-    tl.to(ch3, { opacity: 1, y: 0, duration: 0.08 }, 0.62);
-    tl.to(ch3, { opacity: 0, y: -10, duration: 0.06 }, 0.88);
+    CHAPTER_TIMINGS.forEach((t, i) => {
+      const el = chapterRefs.current[i];
+      if (!el) return;
+      tl.to(el, { opacity: 1, y: 0, duration: 0.035 }, t.in);
+      tl.to(el, { opacity: 0, y: -10, duration: 0.035 }, t.out);
+    });
 
     tl.set({}, {}, 1);
 
@@ -96,18 +186,39 @@ export default function CinematicLanding() {
     <section
       ref={containerRef}
       className="relative w-full bg-ink"
-      style={{ height: "360vh" }}
+      style={{ height: "720vh" }}
     >
-      {/* CSS sticky panel — no GSAP pin needed, which means no
-          "pin release" jump at the end. The panel sits in view for
-          the whole 360vh of scroll. */}
       <div className="sticky top-0 h-screen w-full overflow-hidden bg-ink">
-        <FrameSequence
-          progressRef={progressRef}
-          onReady={() => setReady(true)}
-        />
+        {/* Scene 1 base layer */}
+        <div className="absolute inset-0">
+          <FrameSequence
+            progressRef={scene1ProgRef}
+            framesDir={SCENE_1.framesDir}
+            frameCount={SCENE_1.frameCount}
+            maxFrameIndex={SCENE_1.maxFrameIndex}
+            scrubEnd={SCENE_1.scrubEnd}
+            startLoading={true}
+            onReady={() => setScene1Ready(true)}
+          />
+        </div>
 
-        {/* Readability gradient — light top, heavier bottom where text sits */}
+        {/* Scene 2 overlay layer — crossfades in around 50% progress */}
+        <div
+          ref={scene2LayerRef}
+          className="absolute inset-0"
+          style={{ opacity: 0 }}
+        >
+          <FrameSequence
+            progressRef={scene2ProgRef}
+            framesDir={SCENE_2.framesDir}
+            frameCount={SCENE_2.frameCount}
+            maxFrameIndex={SCENE_2.maxFrameIndex}
+            scrubEnd={SCENE_2.scrubEnd}
+            startLoading={scene1Ready}
+          />
+        </div>
+
+        {/* Readability gradient */}
         <div
           className="pointer-events-none absolute inset-0 z-[5]"
           style={{
@@ -131,17 +242,32 @@ export default function CinematicLanding() {
           <span className="font-serif text-base text-paper">Casa Calma</span>
         </div>
 
-        {/* Scroll cue */}
-        <div className="pointer-events-none absolute bottom-8 left-1/2 z-30 flex -translate-x-1/2 flex-col items-center gap-2 font-mono text-[10px] uppercase label-tracking text-paper/55 md:bottom-10">
+        {/* Scroll cue (fades out after initial scroll) */}
+        <div
+          ref={scrollCueRef}
+          className="pointer-events-none absolute bottom-8 left-1/2 z-30 flex -translate-x-1/2 flex-col items-center gap-2 font-mono text-[10px] uppercase label-tracking text-paper/55 md:bottom-10"
+          style={{ transition: "opacity 600ms ease-out" }}
+        >
           <span>Scroll</span>
           <span className="block h-8 w-px bg-paper/35" />
         </div>
 
-        <ChapterIndicator progressRef={progressRef} />
+        {/* Single chapter indicator — 6 dots covering both scenes */}
+        <ChapterIndicator
+          progressRef={globalProgRef}
+          chapters={CHAPTER_LABELS.map((label) => ({ label }))}
+        />
 
-        <Chapter ref={chapter1Ref} {...CHAPTER_1} />
-        <Chapter ref={chapter2Ref} {...CHAPTER_2} />
-        <Chapter ref={chapter3Ref} {...CHAPTER_3} />
+        {/* Chapter texts — all 6 mounted, timeline-driven opacity */}
+        {CHAPTERS.map((c, i) => (
+          <Chapter
+            key={`${c.eyebrow}-${i}`}
+            ref={(el) => {
+              chapterRefs.current[i] = el;
+            }}
+            {...c}
+          />
+        ))}
       </div>
     </section>
   );
