@@ -28,8 +28,11 @@ const SCENE_2 = {
 
 const SCENE_3 = {
   framesDir: "frames-scene3",
-  frameCount: 240,
-  maxFrameIndex: 239,
+  // First second of the source is regeneration overlap with scene 2 —
+  // dropped during extraction so the match cut at the 2→3 boundary
+  // picks up forward of scene 2's last frame, not behind it.
+  frameCount: 216,
+  maxFrameIndex: 215,
   scrubEnd: 0.95,
 };
 
