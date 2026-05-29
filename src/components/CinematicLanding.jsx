@@ -10,124 +10,85 @@ gsap.registerPlugin(ScrollTrigger);
 
 // ---------- Scene configs ----------
 
-const SCENE_1 = {
-  framesDir: "frames",
-  frameCount: 240,
-  // Source video loops back to aerial at t=9.5s+. Stop on the interior
-  // beat (frame index 228) and ignore the trailing loop-back frames.
-  maxFrameIndex: 228,
-  scrubEnd: 0.92,
-};
+const SCENES = [
+  {
+    framesDir: "frames",
+    frameCount: 240,
+    // Source loops back to aerial at t=9.5s+ — stop on the interior beat.
+    maxFrameIndex: 228,
+    scrubEnd: 0.92,
+  },
+  {
+    framesDir: "frames-scene2",
+    frameCount: 207,
+    maxFrameIndex: 206,
+    scrubEnd: 0.94,
+  },
+  {
+    framesDir: "frames-scene3",
+    // First second of source was AI regeneration overlap — dropped at
+    // extract time so the match cut picks up forward of scene 2's end.
+    frameCount: 216,
+    maxFrameIndex: 215,
+    scrubEnd: 0.95,
+  },
+  {
+    framesDir: "frames-scene4",
+    // Scene 4 has a built-in cross-dissolve over its first ~24 frames
+    // (pool → kitchen). We keep those frames and use them as the
+    // mask transition itself, layered with our own crossfade.
+    frameCount: 127,
+    maxFrameIndex: 126,
+    scrubEnd: 0.94,
+  },
+];
 
-const SCENE_2 = {
-  framesDir: "frames-scene2",
-  frameCount: 207,
-  maxFrameIndex: 206,
-  scrubEnd: 0.94,
-};
+const SCENE_COUNT = SCENES.length;
+const SCENE_SLICE = 1 / SCENE_COUNT;
 
-const SCENE_3 = {
-  framesDir: "frames-scene3",
-  // First second of the source is regeneration overlap with scene 2 —
-  // dropped during extraction so the match cut at the 2→3 boundary
-  // picks up forward of scene 2's last frame, not behind it.
-  frameCount: 216,
-  maxFrameIndex: 215,
-  scrubEnd: 0.95,
-};
-
-const SCENE_COUNT = 3;
+// One transition entry per boundary between scenes.
+//   width — fraction of global scroll progress over which the cross
+//           runs. Tight (≈0.006) reads as an instant cut; wide
+//           (≈0.04) reads as a deliberate dissolve.
+//   blur  — peak blur (px) applied to both scenes during the cross.
+//           Hides micro-jumps and creates a soft "morph" feel. 0 means
+//           no filter is applied (cheaper, and visually right when the
+//           shots are clearly different).
+const TRANSITIONS = [
+  // Scene 1 → 2: similar interior+jungle compositions but different
+  // shots. Short crossfade reads as a soft continuation.
+  { width: 0.024, blur: 0 },
+  // Scene 2 → 3: same pool composition with the camera continuing.
+  // Tight cross + a brief blur peak masks any AI palm-position jitter.
+  { width: 0.020, blur: 3 },
+  // Scene 3 → 4: deliberate mask dissolve from pool to kitchen. Wider
+  // cross meshes with scene 4's own built-in pool→kitchen fade-in.
+  { width: 0.044, blur: 1.5 },
+];
 
 const CHAPTER_LABELS = [
-  "Site",
-  "Approach",
-  "Stillness",
-  "Threshold",
-  "Pavilion",
-  "Mirror",
-  "Sanctuary",
-  "Daybeds",
-  "Wholeness",
+  "Site", "Approach", "Stillness",
+  "Threshold", "Pavilion", "Mirror",
+  "Sanctuary", "Daybeds", "Wholeness",
+  "Kitchen", "Materials", "Ritual",
 ];
 
 const CHAPTERS = [
-  {
-    eyebrow: "I  ·  Site",
-    heading: "Between Sea\n& Cenote",
-    subheading:
-      "A private concrete refuge drawn between ocean, jungle and freshwater.",
-  },
-  {
-    eyebrow: "II  ·  Approach",
-    heading: "A retreat cut\ninto the coastline.",
-    subheading:
-      "Architecture, landscape and water arranged as one calm axis.",
-  },
-  {
-    eyebrow: "III  ·  Stillness",
-    heading: "Designed\nfor stillness.",
-    subheading:
-      "A quiet interior volume opening toward the tropical canopy.",
-  },
-  {
-    eyebrow: "IV  ·  Threshold",
-    heading: "Across the line\nbetween rooms.",
-    subheading:
-      "Glass dissolves; the interior breathes outward into the garden.",
-  },
-  {
-    eyebrow: "V  ·  Pavilion",
-    heading: "An open\npavilion.",
-    subheading: "Stone, water and sky held under a single canopy.",
-  },
-  {
-    eyebrow: "VI  ·  Mirror",
-    heading: "A pool that\nholds the sky.",
-    subheading: "Water stilled between palms and concrete.",
-  },
-  {
-    eyebrow: "VII  ·  Sanctuary",
-    heading: "Reflected\npalms.",
-    subheading:
-      "The pool held quiet between concrete and canopy.",
-  },
-  {
-    eyebrow: "VIII  ·  Daybeds",
-    heading: "Two daybeds,\none canopy.",
-    subheading:
-      "An afternoon held still on the deck.",
-  },
-  {
-    eyebrow: "IX  ·  Wholeness",
-    heading: "Interior, water,\ngarden — one room.",
-    subheading:
-      "The villa opens fully; pool, lounge and living read as a single composition.",
-  },
+  { eyebrow: "I  ·  Site",       heading: "Between Sea\n& Cenote",                subheading: "A private concrete refuge drawn between ocean, jungle and freshwater." },
+  { eyebrow: "II  ·  Approach",  heading: "A retreat cut\ninto the coastline.",   subheading: "Architecture, landscape and water arranged as one calm axis." },
+  { eyebrow: "III  ·  Stillness",heading: "Designed\nfor stillness.",             subheading: "A quiet interior volume opening toward the tropical canopy." },
+  { eyebrow: "IV  ·  Threshold", heading: "Across the line\nbetween rooms.",      subheading: "Glass dissolves; the interior breathes outward into the garden." },
+  { eyebrow: "V  ·  Pavilion",   heading: "An open\npavilion.",                   subheading: "Stone, water and sky held under a single canopy." },
+  { eyebrow: "VI  ·  Mirror",    heading: "A pool that\nholds the sky.",          subheading: "Water stilled between palms and concrete." },
+  { eyebrow: "VII  ·  Sanctuary",heading: "Reflected\npalms.",                    subheading: "The pool held quiet between concrete and canopy." },
+  { eyebrow: "VIII · Daybeds",   heading: "Two daybeds,\none canopy.",            subheading: "An afternoon held still on the deck." },
+  { eyebrow: "IX  ·  Wholeness", heading: "Interior, water,\ngarden — one room.", subheading: "The villa opens fully; pool, lounge and living read as a single composition." },
+  { eyebrow: "X  ·  Kitchen",    heading: "The heart\nof the house.",             subheading: "Stone, wood and morning light." },
+  { eyebrow: "XI  ·  Materials", heading: "Travertine,\nwalnut, marble.",         subheading: "The palette continues through every surface." },
+  { eyebrow: "XII ·  Ritual",    heading: "A quiet stage\nfor the day.",          subheading: "Where every morning begins." },
 ];
 
-// Each scene occupies an equal slice of global scroll.
-const SCENE_SLICE = 1 / SCENE_COUNT;
-const BOUNDARY_1 = SCENE_SLICE;       // ≈ 0.333
-const BOUNDARY_2 = SCENE_SLICE * 2;    // ≈ 0.667
-
-// Two different crossfade styles:
-// - boundary 1 (scene 1 → 2): a short dissolve. The shots are similar
-//   but not identical compositions, so a brief crossfade reads as a
-//   soft continuation.
-// - boundary 2 (scene 2 → 3): a near-instant match cut. The last
-//   frame of scene 2 and the first frame of scene 3 are essentially
-//   the same composition — fading would just double-expose the
-//   moving palms, so we swap fast.
-const FADE_1_START = BOUNDARY_1 - 0.012;
-const FADE_1_END = BOUNDARY_1 + 0.012;
-const FADE_2_START = BOUNDARY_2 - 0.003;
-const FADE_2_END = BOUNDARY_2 + 0.003;
-
-// Chapter text timings, derived from a per-scene template applied to
-// each scene's slice. Each scene's local progress:
-//   ch1: in 0.02, out 0.27
-//   ch2: in 0.31, out 0.58
-//   ch3: in 0.62, out 0.88
+// Per-scene chapter timings (in/out as fraction of scene-local progress).
 const SCENE_CHAPTER_TEMPLATE = [
   { in: 0.02, out: 0.27 },
   { in: 0.31, out: 0.58 },
@@ -145,21 +106,60 @@ for (let s = 0; s < SCENE_COUNT; s++) {
   }
 }
 
+// ---------- Helpers ----------
+
+// For a given scene index, compute the opacity it should have at
+// global progress p, plus any blur it inherits from being on either
+// side of an active transition.
+function computeSceneOpacity(i, p) {
+  if (i === 0) return 1;
+  const t = TRANSITIONS[i - 1];
+  const boundary = i * SCENE_SLICE;
+  const start = boundary - t.width / 2;
+  const end = boundary + t.width / 2;
+  if (p <= start) return 0;
+  if (p >= end) return 1;
+  return (p - start) / (end - start);
+}
+
+function computeSceneBlur(i, p) {
+  let blur = 0;
+  // As outgoing layer of transition i
+  if (i < SCENE_COUNT - 1) {
+    const t = TRANSITIONS[i];
+    const boundary = (i + 1) * SCENE_SLICE;
+    const half = t.width / 2;
+    if (t.blur > 0 && p >= boundary - half && p <= boundary + half) {
+      const dist = Math.abs(p - boundary);
+      blur = Math.max(blur, t.blur * (1 - dist / half));
+    }
+  }
+  // As incoming layer of transition i-1
+  if (i > 0) {
+    const t = TRANSITIONS[i - 1];
+    const boundary = i * SCENE_SLICE;
+    const half = t.width / 2;
+    if (t.blur > 0 && p >= boundary - half && p <= boundary + half) {
+      const dist = Math.abs(p - boundary);
+      blur = Math.max(blur, t.blur * (1 - dist / half));
+    }
+  }
+  return blur;
+}
+
+// ---------- Component ----------
+
 export default function CinematicLanding() {
   const containerRef = useRef(null);
-  const scene1ProgRef = useRef(0);
-  const scene2ProgRef = useRef(0);
-  const scene3ProgRef = useRef(0);
   const globalProgRef = useRef(0);
-  const scene2LayerRef = useRef(null);
-  const scene3LayerRef = useRef(null);
+  const sceneProgRefs = useRef(SCENES.map(() => ({ current: 0 })));
+  const sceneLayerRefs = useRef(SCENES.map(() => ({ current: null })));
   const scrollCueRef = useRef(null);
   const chapterRefs = useRef([]);
 
-  // Stagger preloads so we don't hammer the network with 660+
-  // simultaneous image requests on initial mount.
-  const [scene1Ready, setScene1Ready] = useState(false);
-  const [scene2Ready, setScene2Ready] = useState(false);
+  // Stagger preloads so we don't slam the network with ~700 image
+  // requests at mount.
+  const [readyCount, setReadyCount] = useState(0);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -168,12 +168,14 @@ export default function CinematicLanding() {
     chapterRefs.current.forEach((el) => {
       if (el) gsap.set(el, { opacity: 0, y: 12 });
     });
-    if (scene2LayerRef.current) {
-      gsap.set(scene2LayerRef.current, { opacity: 0 });
-    }
-    if (scene3LayerRef.current) {
-      gsap.set(scene3LayerRef.current, { opacity: 0 });
-    }
+
+    // Initial layer opacities: only scene 0 is visible.
+    sceneLayerRefs.current.forEach((ref, i) => {
+      if (ref.current) {
+        ref.current.style.opacity = i === 0 ? "1" : "0";
+        ref.current.style.filter = "";
+      }
+    });
 
     const progressST = ScrollTrigger.create({
       trigger: container,
@@ -184,43 +186,32 @@ export default function CinematicLanding() {
         const p = self.progress;
         globalProgRef.current = p;
 
-        // Per-scene scaled progress (0..1 within each third).
-        scene1ProgRef.current = Math.min(1, p / SCENE_SLICE);
-        scene2ProgRef.current = Math.max(
-          0,
-          Math.min(1, (p - SCENE_SLICE) / SCENE_SLICE),
-        );
-        scene3ProgRef.current = Math.max(
-          0,
-          (p - SCENE_SLICE * 2) / SCENE_SLICE,
-        );
-
-        // Boundary 1: short crossfade (scene 1 → 2).
-        const op2 = Math.min(
-          1,
-          Math.max(0, (p - FADE_1_START) / (FADE_1_END - FADE_1_START)),
-        );
-        if (scene2LayerRef.current) {
-          scene2LayerRef.current.style.opacity = op2;
+        // Per-scene local progress (0..1 within each slice).
+        for (let i = 0; i < SCENE_COUNT; i++) {
+          sceneProgRefs.current[i].current = Math.max(
+            0,
+            Math.min(1, (p - i * SCENE_SLICE) / SCENE_SLICE),
+          );
         }
 
-        // Boundary 2: near-instant match cut (scene 2 → 3).
-        const op3 = Math.min(
-          1,
-          Math.max(0, (p - FADE_2_START) / (FADE_2_END - FADE_2_START)),
-        );
-        if (scene3LayerRef.current) {
-          scene3LayerRef.current.style.opacity = op3;
+        // Per-scene opacity + blur.
+        for (let i = 0; i < SCENE_COUNT; i++) {
+          const layer = sceneLayerRefs.current[i].current;
+          if (!layer) continue;
+          const op = computeSceneOpacity(i, p);
+          const blur = computeSceneBlur(i, p);
+          layer.style.opacity = op;
+          layer.style.filter = blur > 0.05 ? `blur(${blur.toFixed(2)}px)` : "";
         }
 
-        // Hide the scroll cue once the user has clearly engaged.
+        // Hide scroll cue once user engages.
         if (scrollCueRef.current) {
           scrollCueRef.current.style.opacity = p < 0.02 ? 1 : 0;
         }
       },
     });
 
-    // Chapter text timeline.
+    // Chapter text fade timeline.
     const tl = gsap.timeline({
       defaults: { ease: "power2.inOut" },
       scrollTrigger: {
@@ -256,51 +247,27 @@ export default function CinematicLanding() {
       style={{ height: `${SCENE_COUNT * 360}vh` }}
     >
       <div className="sticky top-0 h-screen w-full overflow-hidden bg-ink">
-        {/* Scene 1 base layer */}
-        <div className="absolute inset-0">
-          <FrameSequence
-            progressRef={scene1ProgRef}
-            framesDir={SCENE_1.framesDir}
-            frameCount={SCENE_1.frameCount}
-            maxFrameIndex={SCENE_1.maxFrameIndex}
-            scrubEnd={SCENE_1.scrubEnd}
-            startLoading={true}
-            onReady={() => setScene1Ready(true)}
-          />
-        </div>
-
-        {/* Scene 2 overlay layer */}
-        <div
-          ref={scene2LayerRef}
-          className="absolute inset-0"
-          style={{ opacity: 0 }}
-        >
-          <FrameSequence
-            progressRef={scene2ProgRef}
-            framesDir={SCENE_2.framesDir}
-            frameCount={SCENE_2.frameCount}
-            maxFrameIndex={SCENE_2.maxFrameIndex}
-            scrubEnd={SCENE_2.scrubEnd}
-            startLoading={scene1Ready}
-            onReady={() => setScene2Ready(true)}
-          />
-        </div>
-
-        {/* Scene 3 overlay layer */}
-        <div
-          ref={scene3LayerRef}
-          className="absolute inset-0"
-          style={{ opacity: 0 }}
-        >
-          <FrameSequence
-            progressRef={scene3ProgRef}
-            framesDir={SCENE_3.framesDir}
-            frameCount={SCENE_3.frameCount}
-            maxFrameIndex={SCENE_3.maxFrameIndex}
-            scrubEnd={SCENE_3.scrubEnd}
-            startLoading={scene2Ready}
-          />
-        </div>
+        {/* Scene layers */}
+        {SCENES.map((scene, i) => (
+          <div
+            key={scene.framesDir}
+            ref={(el) => {
+              sceneLayerRefs.current[i].current = el;
+            }}
+            className="absolute inset-0 will-change-[opacity,filter]"
+            style={{ opacity: i === 0 ? 1 : 0 }}
+          >
+            <FrameSequence
+              progressRef={sceneProgRefs.current[i]}
+              framesDir={scene.framesDir}
+              frameCount={scene.frameCount}
+              maxFrameIndex={scene.maxFrameIndex}
+              scrubEnd={scene.scrubEnd}
+              startLoading={i === 0 || readyCount >= i}
+              onReady={() => setReadyCount((c) => Math.max(c, i + 1))}
+            />
+          </div>
+        ))}
 
         {/* Readability gradient */}
         <div
@@ -336,7 +303,7 @@ export default function CinematicLanding() {
           <span className="block h-8 w-px bg-paper/35" />
         </div>
 
-        {/* Chapter indicator — 9 dots covering all three scenes */}
+        {/* Chapter indicator */}
         <ChapterIndicator
           progressRef={globalProgRef}
           chapters={CHAPTER_LABELS.map((label) => ({ label }))}
