@@ -5,6 +5,7 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 import Chapter from "./Chapter";
 import ChapterIndicator from "./ChapterIndicator";
 import FrameSequence from "./FrameSequence";
+import CTAPanel from "./CTAPanel";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -44,7 +45,12 @@ const SCENES = [
 ];
 
 const SCENE_COUNT = SCENES.length;
-const SCENE_SLICE = 1 / SCENE_COUNT;
+// The CTA panel takes the same scroll slice as a scene, giving the
+// user a deliberate beat to land on the closing call.
+const PANEL_COUNT = SCENE_COUNT + 1;
+const PANEL_SLICE = 1 / PANEL_COUNT;
+const SCENE_SLICE = PANEL_SLICE;
+const CTA_INDEX = SCENE_COUNT;
 
 // One transition entry per boundary between scenes.
 //   width — fraction of global scroll progress over which the cross
@@ -64,7 +70,16 @@ const TRANSITIONS = [
   // Scene 3 → 4: deliberate mask dissolve from pool to kitchen. Wider
   // cross meshes with scene 4's own built-in pool→kitchen fade-in.
   { width: 0.044, blur: 1.5 },
+  // Scene 4 → CTA: clean wide fade. Scene 4 layer dims via the
+  // dedicated overlay so the CTA reads on a calmer backdrop without
+  // losing the architectural still entirely.
+  { width: 0.060, blur: 0 },
 ];
+
+// How dark the held last frame of scene 4 becomes behind the CTA
+// (0 = unchanged, 1 = full black). 0.72 leaves the architecture
+// faintly visible — a still life behind the closing call.
+const CTA_DIM_AMOUNT = 0.72;
 
 const CHAPTER_LABELS = [
   "Site", "Approach", "Stillness",
@@ -156,6 +171,9 @@ export default function CinematicLanding() {
   const sceneLayerRefs = useRef(SCENES.map(() => ({ current: null })));
   const scrollCueRef = useRef(null);
   const chapterRefs = useRef([]);
+  const ctaLayerRef = useRef(null);
+  const ctaDimRef = useRef(null);
+  const indicatorWrapRef = useRef(null);
 
   // Stagger preloads so we don't slam the network with ~700 image
   // requests at mount.
@@ -204,6 +222,31 @@ export default function CinematicLanding() {
           layer.style.filter = blur > 0.05 ? `blur(${blur.toFixed(2)}px)` : "";
         }
 
+        // CTA opacity — uses the 4→CTA transition window.
+        const ctaT = TRANSITIONS[CTA_INDEX - 1];
+        const ctaBoundary = CTA_INDEX * PANEL_SLICE;
+        const ctaStart = ctaBoundary - ctaT.width / 2;
+        const ctaEnd = ctaBoundary + ctaT.width / 2;
+        const ctaOpacity =
+          p <= ctaStart ? 0 : p >= ctaEnd ? 1 : (p - ctaStart) / (ctaEnd - ctaStart);
+        if (ctaLayerRef.current) {
+          ctaLayerRef.current.style.opacity = ctaOpacity;
+          // Disable pointer events on the CTA layer until it's mostly
+          // visible — keeps the email link from intercepting mid-scroll.
+          ctaLayerRef.current.style.pointerEvents =
+            ctaOpacity > 0.85 ? "auto" : "none";
+        }
+        if (ctaDimRef.current) {
+          ctaDimRef.current.style.opacity = ctaOpacity * CTA_DIM_AMOUNT;
+        }
+
+        // Fade out chapter dots indicator before the CTA arrives so it
+        // doesn't compete with the closing typography.
+        if (indicatorWrapRef.current) {
+          const indicatorFade = Math.max(0, 1 - ctaOpacity * 1.6);
+          indicatorWrapRef.current.style.opacity = indicatorFade;
+        }
+
         // Hide scroll cue once user engages.
         if (scrollCueRef.current) {
           scrollCueRef.current.style.opacity = p < 0.02 ? 1 : 0;
@@ -244,7 +287,7 @@ export default function CinematicLanding() {
     <section
       ref={containerRef}
       className="relative w-full bg-ink"
-      style={{ height: `${SCENE_COUNT * 360}vh` }}
+      style={{ height: `${PANEL_COUNT * 360}vh` }}
     >
       <div className="sticky top-0 h-screen w-full overflow-hidden bg-ink">
         {/* Scene layers */}
@@ -285,6 +328,14 @@ export default function CinematicLanding() {
           }}
         />
 
+        {/* Dim overlay for the CTA — fades the held kitchen frame to
+            a calm backdrop without blacking it out completely. */}
+        <div
+          ref={ctaDimRef}
+          className="pointer-events-none absolute inset-0 z-[8] bg-ink"
+          style={{ opacity: 0 }}
+        />
+
         {/* Brand mark */}
         <div className="absolute left-8 top-8 z-30 flex items-center gap-3 md:left-12 md:top-10">
           <div className="h-6 w-6 border border-paper/55 p-[2px]">
@@ -304,10 +355,12 @@ export default function CinematicLanding() {
         </div>
 
         {/* Chapter indicator */}
-        <ChapterIndicator
-          progressRef={globalProgRef}
-          chapters={CHAPTER_LABELS.map((label) => ({ label }))}
-        />
+        <div ref={indicatorWrapRef} style={{ transition: "opacity 400ms ease-out" }}>
+          <ChapterIndicator
+            progressRef={globalProgRef}
+            chapters={CHAPTER_LABELS.map((label) => ({ label }))}
+          />
+        </div>
 
         {/* Chapter texts */}
         {CHAPTERS.map((c, i) => (
@@ -319,6 +372,9 @@ export default function CinematicLanding() {
             {...c}
           />
         ))}
+
+        {/* Closing CTA panel */}
+        <CTAPanel ref={ctaLayerRef} />
       </div>
     </section>
   );
